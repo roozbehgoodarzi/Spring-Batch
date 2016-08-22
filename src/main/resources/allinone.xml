@@ -1,0 +1,258 @@
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:batch="http://www.springframework.org/schema/batch"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+		http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/batch
+		http://www.springframework.org/schema/batch/spring-batch.xsd">
+
+    <bean class="org.springframework.batch.core.scope.StepScope"/>
+    <!--<bean
+            class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+
+        <property name="location">
+            <value>path.properties</value>
+        </property>
+    </bean>-->
+
+    <!-- Jobs -->
+    <batch:job id="topJob" restartable="${restartable}">
+        <batch:step id="inventoryLoadStep">
+            <batch:partition partitioner="partitioner" step="step1">
+                <batch:handler task-executor="taskExecutor" grid-size="30"/>
+            </batch:partition>
+        </batch:step>
+
+    </batch:job>
+
+
+    <!-- Deciders -->
+
+    <!-- Steps -->
+    <batch:step id="step1">
+        <batch:tasklet>
+            <!--throttle-limit="40">-->
+            <batch:chunk reader="flatFileItemReader"
+                         writer="jdbcItemWriter"
+                         commit-interval="${commitInterval}"
+                         skip-limit="${skipLimit}">
+                <batch:skippable-exception-classes>
+                    <batch:include class="org.springframework.dao.DuplicateKeyException"/>
+                    <batch:include class="org.springframework.jdbc.BadSqlGrammarException"/>
+                    <batch:include class="org.springframework.dao.EmptyResultDataAccessException"/>
+                </batch:skippable-exception-classes>
+            </batch:chunk>
+        </batch:tasklet>
+        <batch:listeners>
+            <batch:listener ref="fileDeletionListener"/>
+        </batch:listeners>
+    </batch:step>
+
+    <!-- Processors -->
+
+
+    <!-- Readers -->
+    <!--<bean name="inventoryLoadReader" scope="step"
+          class="org.springframework.batch.item.file.MultiResourceItemReader">
+        &lt;!&ndash;todo set directory URL&ndash;&gt;
+        <property name="skipLimit"
+                  value="#{stepExecutionContext['fileResource']}" />
+        &lt;!&ndash;<property name="lineMapper" ref="inventoryLineMapper" />&ndash;&gt;
+        &lt;!&ndash;<property name="linesToSkip" value="1" />&ndash;&gt;
+        <property name="delegate" ref="flatFileItemReader"/>
+    </bean>-->
+    <!--<bean id="multiResourceReader"-->
+    <!--class=" org.springframework.batch.item.file.MultiResourceItemReader">-->
+    <!--&lt;!&ndash;todo define file root&ndash;&gt;-->
+    <!--<property name="skipLimit" value="file:/inputs/*.*"/>-->
+    <!--<property name="delegate" ref="flatFileItemReader"/>-->
+    <!--</bean>-->
+
+    <bean id="flatFileItemReader" class="org.springframework.batch.item.file.FlatFileItemReader" scope="step">
+        <property name="lineMapper" ref="defaultLineMapper"/>
+        <!--<property name="resource"-->
+        <!--value="file:///F:\InteliJProjects\Batch-1426\src\main\java\fileTest\bnk1-I-1.scripts.txt" />-->
+        <property name="resource"
+                  value="#{stepExecutionContext[inputFile]}" />
+    </bean>
+
+    <bean id="script" class="com.ocs.xd.module.scriptjdbc.model.Script" scope="prototype"/>
+    <!--LineMapper-->
+    <bean name="defaultLineMapper" class="org.springframework.batch.item.file.mapping.DefaultLineMapper">
+
+        <property name="lineTokenizer">
+            <bean
+                    class="org.springframework.batch.item.file.transform.DelimitedLineTokenizer">
+                <property name="names" value="script"/>
+                <property name="delimiter" value="♠"/>
+                <property name="strict" value="false"/>
+            </bean>
+        </property>
+        <property name="fieldSetMapper">
+            <bean
+                    class="org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper">
+                <property name="prototypeBeanName" value="script"/>
+            </bean>
+        </property>
+    </bean>
+
+    <!-- Writers -->
+
+    <bean id="jdbcItemWriter" class="com.ocs.xd.module.scriptjdbc.itemwriter.MyJdbcBatchItemWriter" scope="step">
+        <!--<property name="dataSource" ref="dataSourceDB2" />-->
+        <property name="dataSource" ref="moduleDataSource" />
+        <property name="sql">
+            <value>:scriptValue</value>
+            <!--<value></value>-->
+        </property>
+        <property name="itemSqlParameterSourceProvider">
+            <bean class="org.springframework.batch.item.database.BeanPropertyItemSqlParameterSourceProvider" />
+        </property>
+    </bean>
+
+
+    <!-- Parameter Extractors -->
+
+
+    <bean id="partitioner"
+          class="org.springframework.batch.core.partition.support.MultiResourcePartitioner"
+          scope="step">
+        <property name="keyName" value="inputFile" />
+        <!--<property name="skipLimit" value="file:///F:/InteliJProjects/Batch-1426/src/main/java/fileTest/*.*" />-->
+        <property name="resources" value="${resources}" />
+    </bean>
+
+    <!-- Task Executors -->
+    <bean id="taskExecutor"
+          class="org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor">
+        <property name="corePoolSize" value="10" />
+        <property name="maxPoolSize" value="10" />
+        <property name="allowCoreThreadTimeOut" value="true" />
+    </bean>
+
+    <!-- Listener -->
+    <bean id="fileDeletionListener" class="org.springframework.xd.dirt.plugins.job.support.listener.FileDeletionStepExecutionListener" scope="step">
+        <property name="resources" value="${resources}"/>
+        <property name="deleteFiles" value="${deleteFiles}"/>
+    </bean>
+
+    <!-- Store job-meta in database -->
+<!--    <bean id="jobRepository" class="org.springframework.batch.core.repository.support.JobRepositoryFactoryBean" >
+        <property name="dataSource" ref="dataSource" />
+        <property name="transactionManager" ref="transactionManagerMySQL" />
+        <property name="databaseType" value="mysql" />
+        <property name="isolationLevelForCreate" value="ISOLATION_READ_UNCOMMITTED"/>
+    </bean>-->
+
+    <!-- Launching job -->
+<!--    <bean id="jobLauncher"
+          class="org.springframework.batch.core.launch.support.SimpleJobLauncher">
+        <property name="jobRepository" ref="jobRepository" />
+    </bean>-->
+
+
+    <!-- Linux MySQL -->
+<!--    <bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+        <property name="driverClassName" value="com.mysql.jdbc.Driver" />
+        <property name="url" value="jdbc:mysql://192.168.80.1:3306/spring_meta_schema_1426" />
+        <property name="username" value="root" />
+        <property name="password" value="Dgs.123" />
+        &lt;!&ndash;		<property name="password" value="@li.1234" />&ndash;&gt;
+        <property name="validationQuery" value="SELECT 1"/>
+        <property name="testOnBorrow" value="true"/>
+    </bean>-->
+
+    <!-- Data source -->
+    <bean id="moduleDataSource" class="org.apache.tomcat.jdbc.pool.DataSource" destroy-method="close">
+        <property name="driverClassName" value="${driverClassName}"/>
+        <property name="url" value="${url}"/>
+        <property name="username" value="${username}"/>
+        <property name="password" value="${password}"/>
+        <property name="initialSize" value="${initialSize}" />
+        <property name="maxActive" value="${maxActive}" />
+        <property name="maxIdle" value="${maxIdle}" />
+        <property name="minIdle" value="${minIdle}"/>
+        <property name="maxWait" value="${maxWait}"/>
+        <property name="testOnBorrow" value="${testOnBorrow}"/>
+        <property name="testOnReturn" value="${testOnReturn}"/>
+        <property name="testWhileIdle" value="${testWhileIdle}"/>
+        <property name="validationQuery" value="${validationQuery:#{null}}"/>
+        <property name="timeBetweenEvictionRunsMillis" value="${timeBetweenEvictionRunsMillis}"/>
+        <property name="minEvictableIdleTimeMillis" value="${minEvictableIdleTimeMillis}"/>
+        <property name="removeAbandoned" value="${removeAbandoned}"/>
+        <property name="removeAbandonedTimeout" value="${removeAbandonedTimeout}"/>
+        <property name="logAbandoned" value="${logAbandoned}"/>
+        <property name="validationInterval" value="${validationInterval}"/>
+        <property name="jmxEnabled" value="${jmxEnabled}"/>
+        <property name="fairQueue" value="${fairQueue}"/>
+        <property name="abandonWhenPercentageFull" value="${abandonWhenPercentageFull}"/>
+        <property name="maxAge" value="${maxAge}"/>
+        <property name="useEquals" value="${useEquals}"/>
+        <property name="suspectTimeout" value="${suspectTimeout}"/>
+        <property name="alternateUsernameAllowed" value="${alternateUsernameAllowed}"/>
+        <property name="validatorClassName" value="${validatorClassName:#{null}}"/>
+        <property name="connectionProperties" value="${connectionProperties:#{null}}"/>
+        <property name="initSQL" value="${initSQL:#{null}}"/>
+        <property name="jdbcInterceptors" value="${jdbcInterceptors:#{null}}"/>
+    </bean>
+    <!--<bean id="dataSourceOracle" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">-->
+        <!--<property name="driverClassName" value="oracle.jdbc.driver.OracleDriver" />-->
+        <!--<property name="url" value="jdbc:oracle:thin:@192.168.80.6:1521:sics" />-->
+        <!--<property name="username" value="DGS95" />-->
+        <!--<property name="password" value="123456" />-->
+        <!--<property name="maxActive" value="60" />-->
+        <!--<property name="initialSize" value="60" />-->
+    <!--</bean>-->
+<!--
+    <bean id="jdbctemplateoracle" class="org.springframework.jdbc.core.JdbcTemplate">
+        <property name="dataSource" ref="moduleDataSource" />
+    </bean>-->
+
+    <!--Main DB2-->
+    <!--<bean id="dataSourceDB2" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+        <property name="driverClassName" value="com.ibm.db2.jcc.DB2Driver" />
+        <property name="url" value="jdbc:db2://10.180.0.229:446/LOC1" />
+        <property name="username" value="dsbkhm1" />
+        <property name="password" value="hymyd" />
+    </bean>-->
+
+
+    <!--<bean id="dataSourceDB2" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">-->
+    <!--<property name="driverClassName" value="com.ibm.db2.jcc.DB2Driver" />-->
+    <!--<property name="url" value="jdbc:db2://172.16.65.51:50000/LOC1" />-->
+    <!--<property name="username" value="db2inst1" />-->
+    <!--<property name="password" value="db2admin" />-->
+    <!--</bean>-->
+
+    <!--<bean id="jdbcTemplateDB2" class="org.springframework.jdbc.core.JdbcTemplate">
+        <property name="dataSource" ref="dataSourceDB2" />
+    </bean>-->
+
+
+
+
+
+
+    <!-- Transaction Manager over MySQL -->
+<!--    <bean id="transactionManagerMySQL" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="dataSource" />
+    </bean>-->
+    <!-- Transaction Manager over DB2 -->
+    <!--<bean id="transactionManagerDB2" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="dataSourceDB2" />
+    </bean>-->
+    <!-- Transaction Manager over Oracle -->
+<!--
+    <bean id="transactionManagerOracle" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="moduleDataSource" />
+    </bean>
+-->
+
+
+
+    <!-- Transaction Manager over MySQL -->
+    <!--<bean id="db2TransactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">-->
+    <!--<property name="dataSource" ref="dataSourceDB2" />-->
+    <!--</bean>-->
+
+
+</beans>
